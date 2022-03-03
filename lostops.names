@@ -1,0 +1,31 @@
+lostopstypes = {1: ['sgl_bd'],
+                2: ['L-shaped','water-like', 'bent 120 degrees', 'bent 150 degrees', 'linear'],
+                3: ['trigonal planar', 'trigonal non-coplanar', 'T-shaped'],
+                4: ['square co-planar']}
+tetrahedral CN_4
+rectangular see-saw-like CN_4
+see-saw-like CN_4
+trigonal pyramidal CN_4
+pentagonal planar CN_5
+square pyramidal CN_5
+trigonal bipyramidal CN_5
+hexagonal planar CN_6
+octahedral CN_6
+pentagonal pyramidal CN_6
+hexagonal pyramidal CN_7
+pentagonal bipyramidal CN_7
+body-centered cubic CN_8
+hexagonal bipyramidal CN_8
+q2 CN_9
+q4 CN_9
+q6 CN_9
+q2 CN_10
+q4 CN_10
+q6 CN_10
+q2 CN_11
+q4 CN_11
+q6 CN_11
+cuboctahedral CN_12
+q2 CN_12
+q4 CN_12
+q6 CN_12
