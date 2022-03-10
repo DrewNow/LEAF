@@ -8,45 +8,34 @@ import pandas as pd
 from ase.data import chemical_symbols
 from pymatgen.analysis.local_env import *
 from pymatgen.io.cif import CifParser
-import pickle
+from matminer.featurizers.site.fingerprint import OPSiteFingerprint, VoronoiFingerprint
 
-try:
-   # Python>=3.7
-   from matminer.featurizers.site.fingerprint import OPSiteFingerprint, VoronoiFingerprint
-except: 
-   # Python 3.6
-   from matminer.featurizers.site import OPSiteFingerprint, VoronoiFingerprint
-
-
-class LEAF:
+class Leaf:
     """
     Creates a matrix of one-hot encoded atomic representation
     Values: lists of local environment features (lostops, voronoi tes.)
     Keys:   atomic elements
     """
 
-    def __init__(self, leaf=None, featurizer=OPSiteFingerprint, icsd_dic=None):
-        if leaf:
-            self.leaf = leaf
-        else:
-            self.leaf = {atom: [] for atom in chemical_symbols}
-            self.nleaf = {atom: [] for atom in chemical_symbols}
+    def __init__(self, featurizer=OPSiteFingerprint()):
         self.featurizer = featurizer
-        self.icsd = self.parse_icsd(icsd_dic)
+        self.onehot = {atom: {} for atom in chemical_symbols}
+        self.features_names = self.get_features_names()
+
+    def get_features_names(self):
+        lostops = [i for i in OPSiteFingerprint().feature_labels()]
+        voronoi = [i for i in VoronoiFingerprint().feature_labels()]
+        voronoi = [v for v in voronoi if 'std' not in v]
+        return lostops + voronoi
 
     @staticmethod
-    def get_species(structure):
-        species = [str(s).split()[-1] for s in structure]
-        return [''.join([a for a in s if a.isalpha()]) for s in species]
-
-    def get_features(self, structure):
-        features = []
-        for i in range(len(structure)):
-            features.append(self.featurizer.featurize(structure, i))
-        return features
+    def get_species(site):
+        species = str(site.species).split()
+        return [''.join([a for a in s if a.isalpha()]) for s in species \
+                if ''.join([a for a in s if a.isalpha()]) in chemical_symbols]
 
     @staticmethod
-    def read_file(list_cifs):
+    def readfile(list_cifs):
         """ read file with list of cifs e.g. 1.dat """
 
         cifs = open(list_cifs, 'r').readlines()
@@ -54,44 +43,116 @@ class LEAF:
         order = list_cifs.split('.')[0]
         return cifs, order
 
+    @staticmethod
+    def select_features(i, s):
+        """
+        from all voronoi features select:
+        'Voro_vol_sum', 'Voro_area_sum', 'Voro_vol_mean', 'Voro_vol_minimum',
+        'Voro_vol_maximum', 'Voro_area_mean', 'Voro_area_minimum', 'Voro_area_maximum',
+        'Voro_dist_mean', 'Voro_dist_minimum', 'Voro_dist_maximum'
+        """
+        l = list(VoronoiFingerprint().featurize(s, i))
+        b = l[16:19] + l[20:23] + l[24:27] + l[28:31]
+        return np.array(b)
+
     def average_features_cifs(self, list_cifs):
         """ process a list of cifs  (e.g. 1.dat)
         average features over a number of occurences of the elements in icsd
         write results into a dictionary """
 
-        cifs, order = readfile(list_cifs)
-        leaf = {atom: np.zeros(37) for atom in chemical_symbols}
+        cifs, order = self.readfile(list_cifs)
+        # structures dict
+        icsd = {'composition':[],'structure':[]}
+
+        # lostops
+        # leaf = {atom: np.zeros(37) for atom in chemical_symbols}
+        # nleaf = {atom: 0 for atom in chemical_symbols}
+
+        # voronoi
+        leaf = {atom: np.zeros(11) for atom in chemical_symbols}
         nleaf = {atom: 0 for atom in chemical_symbols}
-
         for cif in cifs:
-            structure = CifParser(fname).get_structures()[0]
-            species = self.get_species(structure)
+            try:
+                structure = CifParser(cif).get_structures()[0]
+            except:
+                continue
+            icsd['composition'].append(str(structure.composition))
+            icsd['structure'].append(structure)
             features = []
-            for i in range(len(structure)): 
-                leaf[species[i]] += self.featurizer.featurize(structure, i) 
-                nleaf[species[i]] += 1
+            for i, s in enumerate(structure):
+                species = self.get_species(s)
+                for element in species:
+                    # lostops
+                    # leaf[element] += self.featurizer.featurize(structure, i)
+                    # nleaf[element] += 1
 
-        pd.DataFrame(leaf).to_pickle(f'leaf_{order}.pickle') 
-        pd.DataFrame(nleaf).to_pickle(f'nleaf_{order}.pickle') 
-             
+                    # voronoi
+                    try:
+                        features = self.select_features(self.featurizer.featurize(structure, i))
+                        leaf[element] += features
+                        nlean[element] += 1
+                    except:
+                        break
 
-    @staticmethod 
-    def parse_icsd(icsd_dic=None, f='./ICSD/full_icsd'):
-       """ load icsd dictionary 
-           or create one (process all cif files) """
+        df = pd.DataFrame(leaf)
+        df.to_pickle(f'Vleaf_{order}.pickle')
+        df = pd.DataFrame(icsd)
+        df.to_pickle(f'icsd_{order}.pickle')
+        df = pd.DataFrame(nleaf, index=[order])
+        df.to_pickle(f'vnleaf_{order}.pickle')
 
-        if icsd_dic:
-           return icds_dic
+    def get_features(self, list_cifs):
+        cifs, order = self.readfile(list_cifs)
+        features = []
+        elements = []
+        for cif in cifs:
+            try:
+                structure = CifParser(cif).get_structures()[0]
+            except:
+                continue
+            print(structure.composition)
+            for i, s in enumerate(structure):
+                species = self.get_species(s)
+                for element in species:
+                    vfeat = []
+                    try:
+                        vfeat = [round(f,3) for i in select_features(i,structure)]
+                    except:
+                        pass
 
-        structures = []
-        for path, dirs, files in os.walk(f):
-            for i in files:
-                fname = os.path.join(path, i)
-                structure = CifParser(fname).get_structures()[0]
-                structures.append([structure])
+                    feats = [round(f,3) for f in self.featurizer.featurize(structure, i)] + \
+                            vfeat
+                    features.append(feats)
+                    elements.append(element)
+        df = pd.DataFrame({'elements': elements, 'features': features})
+        df.sort_values(by=['elements'])
+        df.to_pickle(f'test_features_{order}.pickle')
+    def expand_onehot(self, element, features):
+        """ For all features 'feature_name' with values 'v'
+        create one-hot columns 'feature_name_v'
+        fill the number of occurences into self.onehot
+        """
+        for i,v in enumerate(features):
+            feature = self.features_names + '_' + str(v)
+            if feature in self.onehot[element]:
+                self.onehot[element][feature] += 1
+            else:
+                for atom in chemical_elements:
+                    self.onehot[atom][feature] = 0
 
-        icsd_dic = pd.DataFrame({'structure': structures})
-        icsd_dic.to_pickle('icsd_structures.pickle')
-        return icsd_dic
+     def sort_features(self):
+         """ sort by features names
+         return dictionary[atoms] = 'features values' """
+         for atom in self.onehot:
+             self.onehot[atom] = {k: v for k,v in sorted(self.onehot[atom].items(), key=lambda x: x[0])}
+
+         return {a: np.array(self.onehot[a].values()) for a in self.onehot}
 
 
+
+if __name__ == "__main__":
+    fname = sys.argv[1]
+    #leaf = Leaf(VoronoiFingerprint())
+    leaf = Leaf()
+    #leaf.average_features_cifs(fname)
+    leaf.get_features(fname)
